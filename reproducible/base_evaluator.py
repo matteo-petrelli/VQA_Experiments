@@ -8,6 +8,9 @@ Subclasses must override:
 
 Optionally override:
   - _extra_vqa_fields()
+
+The model backend (Ollama, Phi, Qwen, …) is injected via the
+``model_backend`` parameter — see ``models/`` for implementations.
 """
 
 import json
@@ -16,36 +19,8 @@ import re
 import random
 import datetime
 import traceback
-import subprocess
-import time
-import ollama
 from tqdm.auto import tqdm
 from collections import Counter
-
-
-# ---------------------------------------------------------------------------
-# Ollama server helper (standalone function, called once before experiments)
-# ---------------------------------------------------------------------------
-
-def setup_ollama(model_name="gemma3:4b"):
-    """Starts the Ollama server and pulls the requested model."""
-    ollama_path = (
-        "/usr/local/bin/ollama"
-        if os.path.exists("/usr/local/bin/ollama")
-        else "/usr/bin/ollama"
-    )
-
-    print("Starting Ollama background server...")
-    subprocess.Popen(
-        [ollama_path, "serve"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(5)
-
-    print(f"Pulling model '{model_name}'. This may take a minute...")
-    subprocess.run([ollama_path, "pull", model_name])
-    print("Ollama is ready!\n")
 
 
 # ---------------------------------------------------------------------------
@@ -55,23 +30,34 @@ def setup_ollama(model_name="gemma3:4b"):
 class BaseVQAEvaluator:
     """Base class for all VQA experiment evaluators."""
 
-    def __init__(self, config_path, model_name="gemma3:4b"):
+    def __init__(self, config_path, model_backend):
+        """
+        Parameters
+        ----------
+        config_path : str
+            Path to the JSON configuration file.
+        model_backend : models.base_model.ModelBackend
+            An initialised backend that implements ``infer(prompt, images)``.
+        """
         with open(config_path) as f:
             self.config = json.load(f)
 
+        self.model_backend = model_backend
+
+        # model_config is still used for windowing logic (batch_size / stride)
         self.model_config = {
-            "name": model_name,
+            "name": getattr(model_backend, "model_name", "unknown"),
             "batch_size": 1,
             "stride": 1,
         }
-        self.target_model = model_name
+        self.target_model = self.model_config["name"]
 
         self.sampling_percentage = self.config.get("sampling_percentage", 100)
         self.unable_to_respond_aware = self.config.get(
             "unable_to_respond_aware", True
         )
 
-        print(f"Initialized evaluator for Ollama model: {self.target_model}")
+        print(f"Initialized evaluator for model: {self.target_model}")
         print(f"Experiment class: {self.__class__.__name__}")
 
     # -----------------------------------------------------------------------
@@ -321,7 +307,8 @@ class BaseVQAEvaluator:
     # -----------------------------------------------------------------------
 
     def _generate_answer(self, question, image_paths, item_data):
-        """Windowed inference loop — sends pages to Ollama in batches."""
+        """Windowed inference loop — delegates each call to the
+        injected ``model_backend``."""
         try:
             window_size = self.model_config.get("batch_size", 1)
             stride = (
@@ -355,18 +342,9 @@ class BaseVQAEvaluator:
                     total_images,
                 )
 
-                output = ollama.chat(
-                    model=self.target_model,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": prompt,
-                            "images": window_paths,
-                        }
-                    ],
-                )
+                # Delegate inference to the pluggable backend
+                response = self.model_backend.infer(prompt, window_paths)
 
-                response = output["message"]["content"].strip()
                 all_responses.append(
                     {"pages": window_paths, "answer": response}
                 )

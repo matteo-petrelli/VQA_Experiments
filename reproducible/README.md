@@ -5,22 +5,28 @@ It replaces the isolated Kaggle Jupyter notebooks and the `Experiments_Prompt.tx
 
 ## How to use
 
-Run the `run_experiment.py` script from the command line. You can choose which experiment to run by providing the `--experiment` flag.
+Run the `run_experiment.py` script from the command line. You choose **which experiment** (prompt variant) and **which model backend** to use.
 
 ```bash
-# Basic usage (defaults to gemma3:4b and the standard kaggle config)
-python run_experiment.py --experiment docel_cot_v1
+# Ollama backend (default) — Gemma 3 4B
+python run_experiment.py --experiment docel_cot_v1 --backend ollama --model gemma3:4b
 
-# Specifying a different model and config file
-python run_experiment.py --experiment baseline_ocr --model qwen2.5:3b --config path/to/config.json
+# Phi-3.5 Vision (HuggingFace)
+python run_experiment.py --experiment nlp_tag_cot --backend phi
+
+# Qwen 2.5 VL (HuggingFace, 8-bit quantisation)
+python run_experiment.py --experiment baseline_ocr --backend qwen
+
+# Custom config file
+python run_experiment.py --experiment layout_v4 --backend ollama --config path/to/config.json
 ```
 
-## Available Experiments
-
-You can list all available experiments by running:
+You can list all available experiments and backends by running:
 ```bash
 python run_experiment.py --help
 ```
+
+## Available Experiments
 
 ### Baseline Family
 - `baseline`: Image-only reasoning.
@@ -32,11 +38,11 @@ python run_experiment.py --help
 - `docel_cot_numvre`: Adds document layout summary (percentages of layout element types).
 
 ### NLP Tag Family
-- `nlp_tag`: OCR annotated inline with NLP tags (e.g. `<year>2011</year>`).
+- `nlp_tag`: OCR annotated inline with NLP entity tags.
 - `nlp_tag_cot`: Tagged OCR + Chain-of-Thought reasoning.
 
 ### NLP List Family
-- `nlp_list`: Entity matching between question entities and document entities.
+- `nlp_list`: Entity matching between question and document entities.
 - `nlp_list_cot`: Entity matching + Chain-of-Thought reasoning.
 - `nlp_list_ocr`: Entity matching + standard OCR text.
 - `nlp_list_ocr_cot`: Full entity pipeline with CoT and OCR text.
@@ -44,10 +50,34 @@ python run_experiment.py --help
 ### Layout Family
 - `layout_v1` through `layout_v4`: Spatial and positional reasoning on the image without text, using quadrant analysis.
 
+## Available Model Backends
+
+| Backend  | Model                              | Description                                  |
+|----------|------------------------------------|----------------------------------------------|
+| `ollama` | `gemma3:4b` (default)              | Local Ollama server. Any Ollama model works.  |
+| `phi`    | `Phi-3.5-vision-instruct` (default)| HuggingFace, FP16 precision.                 |
+| `qwen`   | `Qwen2.5-VL-3B-Instruct` (default)| HuggingFace, 8-bit quantisation.             |
+
 ## Architecture
 
-- `base_evaluator.py`: Contains `BaseVQAEvaluator`, which handles Ollama setup, standard OCR extraction utilities, the batched window inference loop, and evaluation statistics.
-- `experiments/`: Contains Python files for each family. Subclasses inherit from the base evaluator and override:
-  - `_prepare_item_data()`: To extract specific features from the dataset JSON (e.g., layout tags, entities).
-  - `_create_prompt()`: To provide the exact experiment prompt.
-  - `_build_prompt_for_window()`: To assemble the prompt for a specific sliding window of pages.
+```
+reproducible/
+├── base_evaluator.py           # BaseVQAEvaluator — shared loop, utilities
+├── experiment_registry.py      # Maps experiment names → classes
+├── run_experiment.py           # CLI entry point
+├── experiments/                # One file per experiment family
+│   ├── baseline.py
+│   ├── docel.py
+│   ├── nlp_tag.py
+│   ├── nlp_list.py
+│   └── layout.py
+└── models/                     # One file per model backend
+    ├── base_model.py           # Abstract ModelBackend interface
+    ├── ollama_model.py         # Ollama (Gemma, etc.)
+    ├── phi_model.py            # Phi-3.5 Vision (HuggingFace)
+    └── qwen_model.py           # Qwen 2.5 VL (HuggingFace)
+```
+
+- **`base_evaluator.py`**: Contains `BaseVQAEvaluator` with the evaluation loop, windowed inference, and all shared OCR/NLP utility methods. It receives a `ModelBackend` instance via dependency injection.
+- **`experiments/`**: Each file contains subclasses that override `_create_prompt()`, `_prepare_item_data()`, and `_build_prompt_for_window()`.
+- **`models/`**: Each file implements `ModelBackend.infer(prompt, image_paths)` for a specific model/framework. The same 17 experiment variants work with **any** backend.
