@@ -1,0 +1,576 @@
+#files: Qwen_vqa_analysis_results_Baseline, Qwen_vqa_analysis_results_Baseline_16bit, Qwen_vqa_analysis_results_Baseline_OCR
+#Prompt Baseline, Baseline + OCR 
+def _create_prompt(self, question, ocr_text=None, corrupted_entities=None, entity_type=None, layout_analysis=None, patch_entities=None):
+    unable_to_respond_line = "- If uncertain, return 'Unable to determine'\n- If you can't find the answer, return 'Unable to determine'" if self.unable_to_respond_aware else ""
+
+    if ocr_text:
+        return (
+            "You are an AI assistant specialized in analyzing document images.",
+            f"Your task is to answer questions about the document image content precisely.\n\n"
+            f"For this question, you have the following OCR text:\n{ocr_text}\n\n"
+            f"Guidelines:\n"
+            f"- Provide concise, focused answers (single word or short phrase preferred)\n"
+            f"- Base your answer on the image and in the provided OCR text:\n"
+            f"{unable_to_respond_line}\n"
+            f"Question: {question}"
+            )
+    return (
+        f"You are an AI assistant specialized in analyzing document images. "
+        f"Your task is to answer questions about the document image content precisely.\n\n"
+        f"Guidelines:\n"
+        f"- Provide concise, focused answers (single word or short phrase preferred)\n"
+        f"- Base your answer on what you see in the image\n"
+        f"{unable_to_respond_line}\n"
+        f"Question: {question}"
+    )
+
+
+#file name: Qwen_vqa_analysis_results_DocEl
+#table name: DocEl
+#Prompt with structered ocr. Below an example of structered_text
+def _create_prompt(self, question, structured_text):
+    unable_to_respond_line = "- If you are not certain or the context does not match, return 'Unable to determine'."
+    prompt = (
+        "You are a highly precise AI assistant for document analysis."
+        "Your task is to answer questions by meticulously checking the provided document content.\n\n"
+        "The document text is structured with layout labels (e.g., [Title], [Plain Text], [Endnote]) on a per-page basis.\n\n"
+        "--- DOCUMENT CONTENT ---\n"
+        f"{structured_text}\n"
+        "--- END OF DOCUMENT CONTENT ---\n\n"
+        "Guidelines:\n"
+        "- Provide a concise answer (a single word or short phrase).\n"
+        "- Your answer MUST be based on the information provided above.\n"
+        "- **Crucially, verify the context. An entity (e.g., a year, a name) found in a different section or page than the one implied by the question makes the question unanswerable from that context.**\n"
+        "- For example, if the question asks about a main fact, an answer found only in an [Endnote] or on a different page is NOT valid.\n"
+        f"{unable_to_respond_line}\n\n"
+        f"Question: {question}"
+    )
+
+example of structured_text content:
+-- DOCUMENT CONTENT ---
+--- Page: page1.jpg ---
+[Title]: The Facts About Impaired Driving
+[Plain Text]: In 2009, 10,839 people were killed...
+--- Page: page2.jpg ---
+[Endnote]: 2. U.S. Department of Transportation, 2011, Fatality Analysis Reporting System...
+--- END OF DOCUMENT CONTENT ---
+
+
+#file name: Qwen_vqa_analysis_results_DocEl_cot_v1
+#table_name: DocEl + cot v1
+def _create_prompt(self, question, structured_text):
+    prompt = (
+        "You are a highly precise AI assistant for document analysis.\n"
+        "Your task is to answer questions about the document image content precisely.\n\n"
+        "### DOCUMENT CONTENT ###\n"
+        f"{structured_text}\n\n"
+        "### GUIDELINES ###\n"
+        "1. **Identify Key Entities:** Extract the main entities or concepts from the question:\n"
+        f"  Question: '{question}'\n"
+        "   Example entities: dates, names, numbers, organizations, or key terms.\n\n"
+        2. **Identify and Categorize Document Elements:**  
+        "    - Examine the document content to identify the distinct elements present (e.g., [Title], [Subtitle], [Plain Text], [Table], [Figure], [Endnote], [Header], [Footer])."  
+        "    - For each page, note the structure and hierarchy of these elements to understand where key information is likely located."  
+        "    - Determine which elements are primary (e.g., [Title], [Plain Text]) and which are secondary or contextual (e.g., [Endnote], [Reference])."  
+        "    - This structural undertanding will guide the subsequent entity matching process." #togliere
+        "3. **Check for Key Entities in Each Document Element:**\n"
+        "   - Search the provided content for matches of these entities within document elements (#identified in the point 2\n) such as [Title], [Plain Text], [Table], [Figure], [Endnote], etc.\n"
+        "   - Note where they appear and in which page or section.\n\n"
+        "4. **Check for Consistency Between Document Elements and Question Context:**\n"
+        "   - Evaluate whether the element containing the match (e.g., [Title], [Plain Text], [Endnote]) aligns with the question’s intent.\n"
+        "   - Example: factual answers should come from [Plain Text] or [Table], not [Endnote] or [Reference].\n"
+        "   - If information appears only in secondary elements or mismatched contexts, treat as invalid.\n\n"
+        "5. **Formulate the Answer:**\n"
+        "   - If a valid and consistent match exists, provide a concise factual answer (single word or short phrase).\n"
+        "   - If entities are missing or context mismatches, respond with 'Unable to determine'.\n\n"
+        "--- RESPONSE FORMAT ---\n"
+        "Return only the final answer.\n"
+        "If uncertain, respond exactly with 'Unable to determine'.\n\n"
+        f"Question: {question}\n"
+        "Final Answer:"
+    )
+    return prompt
+
+
+
+#file name: Qwen_vqa_analysis_results_DocEl_cot_v2
+#table_name: DocEl + cot v2
+#slightly different from v1 
+def _create_prompt(self, question, structured_text):
+    prompt = (
+        "You are a highly precise AI assistant for document analysis.\n"
+        "Your task is to answer the question by reasoning carefully over the structured document content.\n\n"
+        "### DOCUMENT CONTENT ###\n"
+        f"{structured_text}\n\n"
+        "### GUIDELINES ###\n"
+        "1. **Identify Key Entities:** Extract the main entities or concepts from the question "
+        f"(e.g., dates, names, organizations, key terms).\n"
+        f"   Question: '{question}'\n\n"
+        "2. **Identify and Categorize Document Elements:**\n"
+        "   - Recognize document elements such as [Title], [Subtitle], [Plain Text], [Table], [Figure], [Endnote], [Header], [Footer].\n"
+        "   - Determine their structure and hierarchy to locate where key information is likely found.\n"
+        "   - Distinguish between primary elements ([Title], [Plain Text]) and secondary ones ([Endnote], [Reference]).\n\n"
+        "3. **Match Entities Within Elements:**\n"
+        "   - Search for occurrences of the key entities inside the identified elements.\n"
+        "   - Note where they appear and on which page or section.\n\n"
+        "4. **Check Contextual Consistency:**\n"
+        "   - Verify that the source element matches the question’s intent.\n"
+        "   - Example: factual answers should come from [Plain Text] or [Table], not from [Endnote] or [Reference].\n"
+        "   - Treat mismatched or secondary contexts as invalid.\n\n"
+        "5. **Formulate the Answer:**\n"
+        "   - If a consistent and valid match exists, provide a concise answer (single word or short phrase).\n"
+        "   - If no valid match is found, respond 'Unable to determine'.\n\n"
+        "--- RESPONSE FORMAT ---\n"
+        "Return only the final answer.\n"
+        "If uncertain, respond exactly with 'Unable to determine'.\n\n"
+        f"Question: {question}\n"
+        "Final Answer:"
+    )
+    return prompt
+
+#file name: Qwen_vqa_analysis_results_DocEl_cot_v3
+#table_name: DocEl + cot v3
+#adding a new check for eventual contradiction between the question and the document content
+def _create_prompt(self, question, structured_text):
+    prompt = (
+        "You are a highly precise AI assistant for document analysis.\n"
+        "Your task is to answer questions about the document image content precisely.\n\n"
+        "### DOCUMENT CONTENT ###\n"
+        f"{structured_text}\n\n"
+        "### GUIDELINES ###\n"
+        "1. **Identify Key Entities:** Extract the main entities or concepts from the question:\n"
+        f"  Question: '{question}'\n"
+        "   Example entities: dates, names, numbers, organizations, or key terms.\n\n"
+        "2. **Identify and Categorize Document Elements:**\n"
+        "    - Examine the document content to identify the distinct elements present (e.g., [Title], [Subtitle], [Plain Text], [Table], [Figure], [Endnote], [Header], [Footer])."  
+        "    - For each page, note the structure and hierarchy of these elements to understand where key information is likely located."  
+        "    - Determine which elements are primary (e.g., [Title], [Plain Text]) and which are secondary or contextual (e.g., [Endnote], [Reference])."  
+        "3. **Check for Key Question Entities in Each Document Element:**\n"
+        "   - Search the provided content for matches of these question entities within document elements identified in the point 2\n"
+        "   - Note where they appear and in which page or section.\n\n"
+        "4. **Check for Consistency Between Document Elements and Question Context:**\n"
+        "   - Evaluate whether the element containing the match (e.g., [Title], [Plain Text], [Endnote]) aligns with the question’s intent.\n"
+        "   - Example: factual answers should come from [Plain Text] or [Table], not [Endnote] or [Reference].\n"
+        "   - If information appears only in secondary elements or mismatched contexts, treat as invalid.\n\n"
+        "5. **Check for Contradictions Between Document Elements and the Question:**\n"
+        "   - Examine whether any document element contains information that directly contradicts the facts or assumptions stated in the question.\n"
+        "   - Examples: if the question implies 'the report was published in 2011' but the document states 'Report published in 2010', this is a contradiction.\n"
+        "   - If any element presents a clear contradiction or conflicting information, consider the document unreliable for answering the question.\n"
+        "   - In such cases, respond 'Unable to determine'.\n\n"
+        "6. **Formulate the Answer:**\n"
+        "   - If a valid and consistent match exists (no contradictions, correct context), provide a concise factual answer (single word or short phrase).\n"
+        "   - If entities are missing, contexts are mismatched, or any contradiction is detected, respond 'Unable to determine'.\n\n"
+        "### RESPONSE FORMAT ###\n"
+        "Return only the final answer.\n"
+        "If uncertain, respond exactly with 'Unable to determine'.\n\n"
+        f"Question: {question}\n"
+        "Final Answer:"
+    )
+    return prompt
+
+#file name: Qwen_vqa_analysis_results_DocEl_cot_v4
+#table_name: DocEl + cot v4
+#slightly different and shorter than v3
+def _create_prompt(self, question, structured_text):
+    prompt = (
+        "You are a highly precise AI assistant for document analysis.\n"
+        "Your task is to answer questions about the document image content precisely.\n\n"
+        "DOCUMENT CONTENT\n"
+        f"{structured_text}\n\n"
+        "GUIDELINES\n"
+        "1. Identify Key Entities: Extract the main entities or concepts from the question.\n"
+        "2. Identify and Categorize Document Elements: Examine the document content to identify the distinct elements present (e.g., [Title], [Plain Text], [Table], [Figure], ecc).\n"
+        "3. Check for Key Question Entities in Each Document Element: Look for matches between identified question entities inside document elements.\n"
+        "4. Check for Consistency Between Document Elements and Question Context: Evaluate whether the element containing the match (e.g., [Title], [Plain Text], [Endnote]) aligns with the question’s intent. If information appears only in secondary elements or mismatched contexts, treat as invalid.\n"
+        "5. Check for Contradictions Between Document Elements and the Question: Examine whether any document element contains information that directly contradicts the facts or assumptions stated in the question. If any element presents a clear contradiction or conflicting information, respond 'Unable to determine'.\n"
+        "6. Formulate the Answer: If a valid and consistent match exists, provide a concise factual answer (single word or short phrase). If entities are missing, contexts are mismatched, or any contradiction is detected, respond 'Unable to determine'.\n\n"
+        f"QUESTION\n"
+        f"{question}\n"
+        "Final Answer:"
+    )
+    return prompt   
+
+#file name: Qwen_vqa_analysis_results_DocEl_cot_NumVRE
+#table_name: DocEl + cot + NumVRE
+#adding a summary of the VRE elements of the document. 
+#Example: "layout_summary": "### DOCUMENT STRUCTURE SUMMARY ###\nBelow is the distribution of visual Document element types detected in the document pages:\n"
+#"- d77a4807f292c0925d2333caa624268c_0.jpg \u2192 abandon: 2 (8.7%), figure: 1 (4.3%), plain text: 17 (73.9%), title: 3 (13.0%)\"
+#"- d77a4807f292c0925d2333caa624268c_1.jpg \u2192 plain text: 11 (78.6%), title: 3 (21.4%)"
+def _create_prompt(self, question, structured_text, layout_summary):
+    prompt = (
+        "You are a highly precise AI assistant for document analysis.\n"
+        "Your task is to answer questions about the document image content precisely.\n\n"
+        "### DOCUMENT CONTENT ###\n"
+        f"{structured_text}\n\n"
+        f"{layout_summary}\n\n"
+        "### GUIDELINES ###\n"
+        "1. **Identify Key Entities:** Extract the main entities or concepts from the question:\n"
+        f"  Question: '{question}'\n"
+        "   Example entities: dates, names, numbers, organizations, or key terms.\n\n"
+        "2. **Identify and Categorize Document Elements:**\n"
+        "    - Examine the document content to identify the distinct elements present (e.g., [Title], [Subtitle], [Plain Text], [Table], [Figure], [Endnote], [Header], [Footer]).\n"
+        "    - For each page, note the structure and hierarchy of these elements to understand where key information is likely located.\n"
+        "    - Determine which elements are primary (e.g., [Title], [Plain Text]) and which are secondary or contextual (e.g., [Endnote], [Reference]).\n\n"
+        "3. **Evaluate Document Composition:**\n"
+        "    - Use the document structure summary above to assess the overall composition of the document.\n"
+        "    - Elements with higher frequency (e.g., many [Plain Text] or [Table]) indicate the main source of factual content.\n"
+        "    - If a page is dominated by secondary elements (e.g., [Footer], [Endnote]), treat information from it as less reliable.\n"
+        "    - Consider the distribution percentages before deciding where the most relevant evidence likely resides.\n\n"
+        "4. **Check for Key Question Entities in Each Document Element:**\n"
+        "   - Search the provided content for matches of these question entities within the identified elements.\n"
+        "   - Note where they appear and in which page or section.\n\n"
+        "5. **Check for Consistency Between Document Elements and Question Context:**\n"
+        "   - Evaluate whether the element containing the match (e.g., [Title], [Plain Text], [Endnote]) aligns with the question’s intent.\n"
+        "   - Example: factual answers should come from [Plain Text] or [Table], not [Endnote] or [Reference].\n"
+        "   - If information appears only in secondary elements or mismatched contexts, treat as invalid.\n\n"
+        "6. **Check for Contradictions Between Document Elements and the Question:**\n"
+        "   - Examine whether any document element contains information that directly contradicts the facts or assumptions stated in the question.\n"
+        "   - Examples: if the question implies 'the report was published in 2011' but the document states 'Report published in 2010', this is a contradiction.\n"
+        "   - If any element presents a clear contradiction or conflicting information, consider the document unreliable for answering the question.\n"
+        "   - In such cases, respond 'Unable to determine'.\n\n"
+        "7. **Formulate the Answer:**\n"
+        "   - If a valid and consistent match exists (no contradictions, correct context), provide a concise factual answer (single word or short phrase).\n"
+        "   - If entities are missing, contexts are mismatched, structure is ambiguous, or any contradiction is detected, respond 'Unable to determine'.\n\n"
+        "### RESPONSE FORMAT ###\n"
+        "Return only the final answer.\n"
+        "If uncertain, respond exactly with 'Unable to determine'.\n\n"
+        f"Question: {question}\n"
+        "Final Answer:"
+    )
+    return prompt
+
+
+#file name: Qwen_vqa_analysis_results_NLP_tag
+#table_name: NLP tagged OCR
+#adding a tag for each NLP entities of the OCR
+#Examples of tag:<time_information>timeframe</time_information>,<year_numerical_value>2011</year_numerical_value> 
+def _create_prompt(self, question, NLP_tag_text, entities=None, entity_types=None):
+    annotated_question = self.annotate_question_with_entities(question, entities or [], entity_types or [])
+
+    unable_to_respond_line = "- If you are not certain or the context does not match, return 'Unable to determine'."
+    prompt = (
+        "You are a highly precise AI assistant for document analysis."
+        "Your task is to answer questions by meticulously checking the provided document content.\n\n"
+        "The document text is structured with OCR text where entities are annotated using NLP tags.\n\n"
+        "--- DOCUMENT CONTENT ---\n"
+        f"{NLP_tag_text}\n"
+        "--- END OF DOCUMENT CONTENT ---\n\n"
+        "Guidelines:\n"
+        "- Provide a concise answer (a single word or short phrase).\n"
+        "- Your answer MUST be based on the information provided above.\n"
+        "- **Crucially, verify the context. An entity (e.g., a year, a name) found in a different section or page than the one implied by the question makes the question unanswerable from that context.**\n"
+        "- For example, if the question asks about a main fact, an answer found only in an [Endnote] or on a different page is NOT valid.\n"
+        f"{unable_to_respond_line}\n\n"
+        f"Question: {annotated_question}"
+    )
+    return prompt
+
+
+#file name: Qwen_vqa_analysis_results_NLP_tag_cot
+#table_name: NLP tagged OCR
+#adding some cot steps to check the tagged OCR
+def _create_prompt(self, question, NLP_tag_text, entities=None, entity_types=None):
+    annotated_question = self.annotate_question_with_entities(
+        question, entities or [], entity_types or []
+    )
+
+    prompt = (
+        "You are a highly precise AI assistant for document analysis.\n"
+        "Your task is to answer questions by carefully reasoning on the provided OCR text.\n\n"
+        "The OCR text has been enriched with NLP entity tags (e.g., <year_numerical_value>, <time_information>, <event>), "
+        "so that important elements are explicitly marked.\n\n"
+        "--- DOCUMENT CONTENT WITH TAGGED ENTITIES ---\n"
+        f"{NLP_tag_text}\n"
+        "--- END OF DOCUMENT CONTENT ---\n\n"
+        "Analyze the user's question by following these steps:\n"
+        f"1. **Understand the Question:** Break down the question: '{annotated_question}' into its key elements.\n"
+        "2. **Identify Tagged Entities:** Which tagged entities (<...>...</...>) from the OCR are relevant to this question?\n"
+        "3. **Locate Evidence in OCR:** Find where those entities appear in the document text provided above.\n"
+        "4. **Verify Context:** Check if the context around the entities (the sentence, section, or page) is consistent with what the question is asking.\n"
+        "5. **Resolve Ambiguities:** If multiple matches exist, choose the one that best fits the context implied by the question.\n"
+        "6. **Formulate Final Answer:**\n"
+        "   - If you find a clear, contextually correct match, provide the concise answer (a single word or short phrase).\n"
+        "   - If the entities appear but only in mismatched context, respond with 'Unable to determine'.\n"
+        "   - If the entities do not appear at all, respond with 'Unable to determine'.\n\n"
+        "Final Answer:"
+    )
+    return prompt
+
+
+
+#file name: Qwen_vqa_analysis_results_NLP_list
+#table_name: NLP entity list
+#list of NLP entities in question_entities and in doc_entities
+def _create_prompt(self, question, question_entities, doc_entities):
+    unable_to_respond_line = "- If uncertain, return 'Unable to determine'."
+    prompt = (
+        "You are a precise AI assistant for document analysis.\n\n"
+        "We provide you with two sets of annotated entities:\n"
+        f"- Entities in the question: {question_entities}\n"
+        f"- Entities in the document: {doc_entities}\n\n"
+        "Guidelines:\n"
+        "- Provide a concise answer (a single word or short phrase).\n"
+        "- Match question entities against document entities.\n"
+        "- If context does not align or entities are missing, answer 'Unable to determine'.\n\n"
+        f"{unable_to_respond_line}\n\n"
+        f"Question: {question}\n"
+        "Final Answer:"
+    )
+    return prompt
+
+#file name: Qwen_vqa_analysis_results_NLP_list_cot
+#table_name: NLP entity list + cot
+def _create_prompt(self, question, question_entities, doc_entities):
+    unable_to_respond_line = (
+        "- If uncertain or context does not align, respond with 'Unable to determine'."
+    )
+
+    prompt = (
+        "You are a highly precise AI assistant specialized in document analysis.\n"
+        "Your task is to analyze the question and the document entities to determine the correct answer.\n\n"
+        "We provide you with two sets of annotated entities:\n"
+        f"- Entities in the question: {question_entities}\n"
+        f"- Entities in the document: {doc_entities}\n\n"
+        "Follow these reasoning steps carefully before giving your final answer:\n"
+        "1. **Identify Key Entities:** Examine the question and list all entities explicitly mentioned or implied.\n"
+        "2. **Locate Matches:** Search for corresponding entities within the document entities that share the same type or meaning.\n"
+        "3. **Check Context:** Evaluate whether the matching entities are found in a consistent context — same page, same semantic meaning, or same type of information (e.g., dates, organizations, people, locations).\n"
+        "4. **Resolve Ambiguities:** If multiple possible matches exist, choose the most contextually relevant one.\n"
+        "5. **Determine Validity:** If no valid match exists, or if the context is contradictory, the answer is 'Unable to determine'.\n"
+        "6. **Provide the Final Answer:** Summarize your conclusion in a concise manner (a single word or short phrase).\n\n"
+        "Guidelines:\n"
+        "- Be concise and factual.\n"
+        "- Base your reasoning only on the provided entities.\n"
+        "- Do not invent or assume missing information.\n"
+        f"{unable_to_respond_line}\n\n"
+        f"Question: {question}\n"
+        "Final Answer:"
+    )
+    return prompt
+
+#file name: Qwen_vqa_analysis_results_NLP_list_OCR
+#table_name: NLP entity list + OCR
+#adding the non tagged OCR of the text in the prompt and the concept of contradiction, 
+def _create_prompt(self, question, question_entities, doc_entities, ocr_text=None):
+    unable_to_respond_line = "- If uncertain, return 'Unable to determine'."
+    prompt = (
+        "You are a precise AI assistant for document analysis.\n\n"
+        "We provide you with two sets of annotated entities and the document OCR:\n"
+        f"- Entities in the question: {question_entities}\n"
+        f"- Entities in the document: {doc_entities}\n"
+        f"- Document OCR: {ocr_text}\n\n"
+        "Guidelines:\n"
+        "- Provide a concise answer (a single word or short phrase).\n"
+        "- Match question entities against document entities.\n"
+        "- If entities are missing, contexts are mismatched, or any contradiction is detected, respond 'Unable to determine'.\n\n"
+        f"{unable_to_respond_line}\n\n"
+        f"Question: {question}\n"
+        "Final Answer:"
+    )
+    return prompt
+
+
+#file name: Qwen_vqa_analysis_results_NLP_list_OCR_cot
+#table_name: NLP entity list + OCR + cot v1, NLP entity list + OCR + cot v2
+#Prompt entity list + OCR + Cot + contradiction, in the v2 we tried a different function to build the OCR of the pages but the rest of prompt is the same
+def _create_prompt(self, question, question_entities, doc_entities):
+        
+    prompt = (
+        "You are a highly precise AI assistant specialized in document analysis.\n"
+        "Your task is to analyze the question and the document entities to determine the correct answer.\n\n"
+        "We provide you with two sets of annotated entities and the document OCR:\n"
+        f"- Entities in the question: {question_entities}\n"
+        f"- Entities in the document: {doc_entities}\n"
+        f"- Document OCR: {ocr_text}\n\n"
+        "Follow these reasoning steps carefully before giving your final answer:\n"
+        "1. **Identify Key Entities:** Examine the question and list all entities explicitly mentioned or implied.\n"
+        "2. **Locate Matches:** Search for corresponding entities within the document entities that share the same type or meaning.\n"
+        "3. **Check Context:** Evaluate whether the matching entities are found in a consistent context — same page, same semantic meaning, or same type of information (e.g., dates, organizations, people, locations).\n"
+        "4. **Resolve Ambiguities:** If multiple possible matches exist, choose the most contextually relevant one.\n"
+        "5. **Check for Contradictions:** Determine if any document entity conflicts with or disproves information stated or implied in the question. "
+        "If a contradiction is found, consider the document unreliable for answering.\n"
+        "6. **Determine Validity:** If no valid match exists, or if the context or logic is contradictory, the answer must be 'Unable to determine'.\n"
+        "7. **Provide the Final Answer:** Summarize your conclusion in a concise manner (a single word or short phrase).\n\n"
+        "Guidelines:\n"
+        "- Be concise and factual.\n"
+        "- Base your reasoning only on the provided entities.\n"
+        "- Do not invent or assume missing information.\n"
+        "- If uncertain, contradictory, or context does not align, respond with 'Unable to determine'.\n\n"
+        f"Question: {question}\n"
+        "Final Answer:"
+    )
+    return prompt
+
+
+#file name: Qwen_vqa_analysis_results_Layout_v1
+#table_name: Layout v1
+#Prompt focused on the layout with cot steps to check before giving the answer
+def _create_prompt(self, question):
+    prompt = (
+        "You are a highly precise AI assistant for document layout analysis.\n"
+        "Your task is to answer questions about the visual and structural content of document images.\n\n"
+        "### LAYOUT VERIFICATION STEPS ###\n"
+        "1. **Identify Key Entities:** Extract the main entities or keywords from the question.\n"
+        f"    Question: '{question}'\n\n"
+        "2. **Analyze Spatial Positioning (In-Page and Cross-Page):**\n"
+        "   - Divide each page into four quadrants:\n"
+        "     * Top-left quarter\n"
+        "     * Top-right quarter\n"
+        "     * Bottom-left quarter\n"
+        "     * Bottom-right quarter\n"
+        "   - For each page, determine where the relevant entity or layout feature is likely located.\n"
+        "   - In-page analysis: check whether the entity appears consistently in the same area within the page "
+        "(e.g., always near the top or bottom).\n\n"
+        "3. **Cross-Page Verification (only if multiple pages are provided):**\n"
+        "   - If more than one page is available, compare the spatial distribution of the same entities across pages.\n"
+        "   - Confirm that the positions are coherent across pages (e.g., all appear in top-left areas).\n"
+        "   - If positions vary significantly between pages, or expected layout consistency is missing, treat the cross-page evidence as unreliable.\n"
+        "   - If only one page is provided, skip cross-page verification entirely.\n\n"
+        "4. **Formulate Spatially-Consistent Answer:**\n"
+        "   - If the spatial pattern is consistent and aligns with the question type, provide a concise factual answer.\n"
+        "   - If the pattern is inconsistent, ambiguous, or not aligned with the expected regions, respond 'Unable to determine'.\n\n"
+        "### RESPONSE FORMAT ###\n"
+        "Return only the final verified answer.\n"
+        "If uncertain, inconsistent, or unsupported by layout reasoning, respond exactly with 'Unable to determine'.\n\n"
+        f"Question: {question}\n"
+        "Final Answer:"
+    )
+    return prompt
+
+
+#file name: Qwen_vqa_analysis_results_Layout_v2
+#table_name: Layout v2
+#more detailed than v1
+def _create_prompt(self, question):
+    prompt = (
+    "You are a highly precise AI assistant for document layout analysis.\n"
+    "Your task is to reason spatially about the structure and layout of document pages to answer the question.\n"
+    "Do not infer from text meaning — focus only on visual and positional reasoning.\n\n"
+
+    "### LAYOUT REASONING STEPS ###\n"
+    "1. **Identify Key Entities:** Extract the main entities or visual cues implied by the question.\n"
+    f"   Question: '{question}'\n\n"
+
+    "2. **In-Page Spatial Analysis:**\n"
+    "   - Divide each page into four regions:\n"
+    "     [Q1] Top-Left | [Q2] Top-Right | [Q3] Bottom-Left | [Q4] Bottom-Right\n"
+    "   - Locate where each relevant entity or element appears within its page.\n"
+    "   - Assess spatial coherence: does the entity consistently appear in a specific region (top, bottom, etc.)?\n\n"
+
+    "3. **Cross-Page Verification:**\n"
+    "   - If multiple pages exist, compare spatial zones across them.\n"
+    "   - Confirm consistent positioning of similar entities across pages (e.g., always near top-left).\n"
+    "   - Treat inconsistent spatial locations as unreliable evidence.\n\n"
+
+    "4. **Layout Heuristics (for reasoning support):**\n"
+    "   - Titles and headers usually appear in the upper regions.\n"
+    "   - Tables and core facts often appear mid or bottom-left.\n"
+    "   - References and footnotes are typically bottom-right.\n\n"
+
+    "5. **Formulate Spatially-Consistent Answer:**\n"
+    "   - If entities appear consistently in the expected regions, provide a concise factual answer.\n"
+    "   - If layout evidence is ambiguous, inconsistent, or unsupported, respond 'Unable to determine'.\n\n"
+
+    "### RESPONSE FORMAT ###\n"
+    "Return only the final verified answer.\n"
+    "If uncertain, inconsistent, or unsupported by layout reasoning, respond exactly with 'Unable to determine'.\n\n"
+    f"Question: {question}\n"
+    "Final Answer:"
+    )
+    return prompt
+
+
+#file name: Qwen_vqa_analysis_results_Layout_v3
+#table_name: Layout v3
+#adding contradiction concept and document length check 
+def _create_prompt(self, question):
+    prompt = (
+    "You are a highly precise AI assistant for document layout analysis.\n"
+    "Your task is to reason spatially about the structure and layout of document pages to answer the question.\n"
+    "Do not infer from text meaning — focus only on visual and positional reasoning.\n\n"
+
+    "### LAYOUT REASONING STEPS ###\n"
+    "1. **Identify Key Entities:** Extract the main entities or visual cues implied by the question.\n"
+    f"   Question: '{question}'\n\n"
+
+    "2. **In-Page Spatial Analysis:**\n"
+    "   - Divide each page into four regions:\n"
+    "     [Q1] Top-Left | [Q2] Top-Right | [Q3] Bottom-Left | [Q4] Bottom-Right\n"
+    "   - Locate where each relevant entity or element appears within its page.\n"
+    "   - Assess spatial coherence: does the entity consistently appear in a specific region (top, bottom, etc.)?\n\n"
+
+    "3. **Cross-Page Verification:**\n"
+    "   - If multiple pages exist, compare spatial zones across them.\n"
+    "   - **Consider document length:** the more pages a document has, the higher your confidence threshold must be.\n"
+    "     Only provide an answer after checking most or all pages.\n\n" #inserire numero pagina
+
+    "4. **Layout Heuristics (for reasoning support):**\n"
+    "   - Titles and headers usually appear in the upper regions.\n"
+    "   - Tables and core facts often appear mid or bottom-left.\n"
+    "   - References and footnotes are typically bottom-right.\n\n"
+
+    "5. **Contradiction and Inconsistency Check:**\n"
+    "   - If any spatial evidence or layout pattern directly contradicts or disproves what is implied by the question, treat the document as unreliable for answering.\n"
+    "   - In such cases, respond with 'Unable to determine'.\n\n"
+
+    "6. **Formulate Spatially-Consistent Answer:**\n"
+    "   - If entities appear consistently in the expected regions, provide a concise factual answer.\n"
+    "   - For multi-page documents, answer only when spatial evidence is strong and repeated across pages.\n"
+    "   - If layout evidence is ambiguous, inconsistent, or contradictory (especially in long documents), respond 'Unable to determine'.\n\n"
+
+    "### RESPONSE FORMAT ###\n"
+    "Return only the final verified answer.\n"
+    "If uncertain, inconsistent, contradictory, or unsupported by layout reasoning, respond exactly with 'Unable to determine'.\n\n"
+    f"Question: {question}\n"
+    "Final Answer:"
+    )
+    return prompt
+
+#file name: Qwen_vqa_analysis_results_Layout_v4
+#table_name: Layout v4
+#the document length is now explicitly written in page_info. Example "page_info": "page 1/2"
+def _create_prompt(self, question, page_info):
+    prompt = (
+    "You are a highly precise AI assistant for document layout analysis.\n"
+    "Your task is to reason spatially about the structure and layout of document pages to answer the question.\n"
+    "Do not infer from text meaning — focus only on visual and positional reasoning.\n\n"
+
+    "### LAYOUT REASONING STEPS ###\n"
+    "1. **Identify Key Entities:** Extract the main entities or visual cues implied by the question.\n"
+    f"   Question: '{question}'\n\n"
+
+    "2. **In-Page Spatial Analysis:**\n"
+    "   - Divide each page into four regions:\n"
+    "     [Q1] Top-Left | [Q2] Top-Right | [Q3] Bottom-Left | [Q4] Bottom-Right\n"
+    "   - Locate where each relevant entity or element appears within its page.\n"
+    "   - Assess spatial coherence: does the entity consistently appear in a specific region (top, bottom, etc.)?\n\n"
+
+    "3. **Cross-Page Verification:**\n"
+    "   - If multiple pages exist, compare spatial zones across them.\n"
+    f"   - **Consider document length: {page_info}** Only provide an answer after checking all pages.\n\n"
+
+    "4. **Layout Heuristics (for reasoning support):**\n"
+    "   - Titles and headers usually appear in the upper regions.\n"
+    "   - Tables and core facts often appear mid or bottom-left.\n"
+    "   - References and footnotes are typically bottom-right.\n\n"
+
+    "5. **Contradiction and Inconsistency Check:**\n"
+    "   - If any spatial evidence or layout pattern directly contradicts or disproves what is implied by the question, treat the document as unreliable for answering.\n"
+    "   - In such cases, respond with 'Unable to determine'.\n\n"
+
+    "6. **Formulate Spatially-Consistent Answer:**\n"
+    "   - If entities appear consistently in the expected regions, provide a concise factual answer.\n"
+    "   - For multi-page documents, answer only when spatial evidence is strong and repeated across pages.\n"
+    "   - If layout evidence is ambiguous, inconsistent, or contradictory (especially in long documents), respond 'Unable to determine'.\n\n"
+
+    "### RESPONSE FORMAT ###\n"
+    "Return only the final verified answer.\n"
+    "If uncertain, inconsistent, contradictory, or unsupported by layout reasoning, respond exactly with 'Unable to determine'.\n\n"
+    f"Question: {question}\n"
+    "Final Answer:"
+    )
+    return prompt
+
+
+     
+
