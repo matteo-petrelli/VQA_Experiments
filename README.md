@@ -17,6 +17,9 @@ python run_experiment.py --experiment nlp_tag_cot --backend phi
 # Qwen 2.5 VL (HuggingFace, 8-bit quantisation)
 python run_experiment.py --experiment baseline_ocr --backend qwen
 
+# Qwen3-VL 8B via Ollama
+python run_experiment.py --experiment docel_cot_v1 --backend ollama --model qwen3-vl:8b
+
 # Custom config file
 python run_experiment.py --experiment layout_v4 --backend ollama --config path/to/config.json
 ```
@@ -52,11 +55,12 @@ python run_experiment.py --help
 
 ## Available Model Backends
 
-| Backend  | Model                              | Description                                  |
-|----------|------------------------------------|----------------------------------------------|
-| `ollama` | `gemma3:4b` (default)              | Local Ollama server. Any Ollama model works.  |
-| `phi`    | `Phi-3.5-vision-instruct` (default)| HuggingFace, FP16 precision.                 |
-| `qwen`   | `Qwen2.5-VL-3B-Instruct` (default)| HuggingFace, 8-bit quantisation.             |
+| Backend  | Model                              | Description                                        |
+|----------|------------------------------------|----------------------------------------------------||
+| `ollama` | `gemma3:4b` (default)              | Local Ollama server. Any Ollama vision model works. |
+| `ollama` | `qwen3-vl:8b`                     | Qwen3-VL 8B via Ollama. Pass `--model qwen3-vl:8b`.|
+| `phi`    | `Phi-3.5-vision-instruct` (default)| HuggingFace, FP16 precision.                       |
+| `qwen`   | `Qwen2.5-VL-3B-Instruct` (default)| HuggingFace, 8-bit quantisation.                   |
 
 ## Architecture
 
@@ -73,7 +77,7 @@ reproducible/
 │   └── layout.py
 └── models/                     # One file per model backend
     ├── base_model.py           # Abstract ModelBackend interface
-    ├── ollama_model.py         # Ollama (Gemma, etc.)
+    ├── ollama_model.py         # Ollama (Gemma, Qwen3-VL, etc.)
     ├── phi_model.py            # Phi-3.5 Vision (HuggingFace)
     └── qwen_model.py           # Qwen 2.5 VL (HuggingFace)
 ```

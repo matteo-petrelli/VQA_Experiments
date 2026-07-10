@@ -1,8 +1,13 @@
 """
-Ollama model backend — uses the local Ollama server (e.g. Gemma 3 4B).
+Ollama model backend — uses the local Ollama server.
+
+Supports any Ollama-compatible vision model, e.g.:
+  - gemma3:4b
+  - qwen3-vl:8b
 """
 
 import os
+import shutil
 import subprocess
 import time
 
@@ -16,13 +21,27 @@ class OllamaBackend(ModelBackend):
         self.model_name = model_name
 
     # ------------------------------------------------------------------
+    def _find_ollama(self):
+        """Locate the ollama binary (cross-platform)."""
+        # Try PATH first (works on both Windows and Linux)
+        path = shutil.which("ollama")
+        if path:
+            return path
+
+        # Fallback: common Linux locations (e.g. Kaggle)
+        for candidate in ("/usr/local/bin/ollama", "/usr/bin/ollama"):
+            if os.path.exists(candidate):
+                return candidate
+
+        raise FileNotFoundError(
+            "Could not find the 'ollama' binary. "
+            "Make sure Ollama is installed and in your PATH."
+        )
+
+    # ------------------------------------------------------------------
     def setup(self):
         """Start the Ollama server and pull the model."""
-        ollama_path = (
-            "/usr/local/bin/ollama"
-            if os.path.exists("/usr/local/bin/ollama")
-            else "/usr/bin/ollama"
-        )
+        ollama_path = self._find_ollama()
 
         print("Starting Ollama background server...")
         subprocess.Popen(

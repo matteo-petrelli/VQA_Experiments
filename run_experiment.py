@@ -3,6 +3,7 @@ CLI entry point — run any VQA experiment with any model backend.
 
 Usage examples:
     python run_experiment.py --experiment docel_cot_v1 --backend ollama --model gemma3:4b
+    python run_experiment.py --experiment docel_cot_v1 --backend ollama --model qwen3-vl:8b
     python run_experiment.py --experiment baseline_ocr  --backend phi
     python run_experiment.py --experiment nlp_tag_cot   --backend qwen
 """
