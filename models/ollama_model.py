@@ -57,7 +57,6 @@ class OllamaBackend(ModelBackend):
 
     # ------------------------------------------------------------------
     def infer(self, prompt, image_paths):
-        import re
         import ollama
 
         output = ollama.chat(
@@ -69,8 +68,7 @@ class OllamaBackend(ModelBackend):
                     "images": image_paths,
                 }
             ],
+            think=False,  # Disable thinking mode (e.g. Qwen3)
         )
-        content = output["message"]["content"]
-        # Strip <think>...</think> blocks (e.g. Qwen3 thinking mode)
-        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
-        return content.strip()
+        return output["message"]["content"].strip()
+
