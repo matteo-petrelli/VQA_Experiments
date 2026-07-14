@@ -365,35 +365,132 @@ class BaseVQAEvaluator:
             }
 
     # -----------------------------------------------------------------------
+    # Checkpoint helpers
+    # -----------------------------------------------------------------------
+
+    CHECKPOINT_INTERVAL = 50  # Save checkpoint every N questions
+
+    def _get_output_file(self):
+        """Compute the final output filename (used by both checkpoint and save)."""
+        output_file = (
+            self.target_model.replace(":", "_")
+            + "_"
+            + self.config["output_file"]
+        )
+
+        if self.config.get("ocr_enabled") and not self.config.get(
+            "unable_to_respond_aware"
+        ):
+            output_file = output_file.replace(".json", "_OCR_UNABLE.json")
+        elif self.config.get("ocr_enabled"):
+            output_file = output_file.replace(".json", "_OCR.json")
+        elif not self.config.get("unable_to_respond_aware"):
+            output_file = output_file.replace(".json", "_UNABLE.json")
+
+        return output_file
+
+    def _get_checkpoint_path(self):
+        """Return the checkpoint file path for this experiment run."""
+        output_file = self._get_output_file()
+        experiment_name = self.__class__.__name__
+        return output_file.replace(".json", f"_{experiment_name}.checkpoint.json")
+
+    def _save_checkpoint(self, data, processed_index):
+        """Save a checkpoint with current progress."""
+        checkpoint = {
+            "_checkpoint_meta": {
+                "processed_index": processed_index,
+                "experiment": self.__class__.__name__,
+                "model": self.target_model,
+                "timestamp": datetime.datetime.now().isoformat(),
+            },
+            "data": data,
+        }
+        checkpoint_path = self._get_checkpoint_path()
+        try:
+            with open(checkpoint_path, "w") as f:
+                json.dump(checkpoint, f)
+        except Exception as e:
+            print(f"Warning: Failed to save checkpoint: {e}")
+
+    def _load_checkpoint(self):
+        """Load a checkpoint if one exists.
+
+        Returns
+        -------
+        tuple (data, start_index) or (None, 0)
+        """
+        checkpoint_path = self._get_checkpoint_path()
+        if not os.path.exists(checkpoint_path):
+            return None, 0
+
+        try:
+            with open(checkpoint_path) as f:
+                checkpoint = json.load(f)
+
+            meta = checkpoint.get("_checkpoint_meta", {})
+            start_index = meta.get("processed_index", 0)
+            data = checkpoint.get("data")
+
+            if data and "corrupted_questions" in data:
+                print(f"\n🔄 Checkpoint found! Resuming from question {start_index}/{len(data['corrupted_questions'])}")
+                print(f"   (saved at {meta.get('timestamp', 'unknown')})\n")
+                return data, start_index
+
+        except Exception as e:
+            print(f"Warning: Could not load checkpoint ({e}). Starting fresh.")
+
+        return None, 0
+
+    def _delete_checkpoint(self):
+        """Remove the checkpoint file after successful completion."""
+        checkpoint_path = self._get_checkpoint_path()
+        if os.path.exists(checkpoint_path):
+            try:
+                os.remove(checkpoint_path)
+                print(f"Checkpoint file removed: {checkpoint_path}")
+            except Exception:
+                pass
+
+    # -----------------------------------------------------------------------
     # Main evaluation loop (not overridden)
     # -----------------------------------------------------------------------
 
     def evaluate(self):
-        """Run the full evaluation pipeline."""
+        """Run the full evaluation pipeline with checkpoint support."""
         print(f"\nStarting evaluation with {self.target_model}...")
 
-        with open(self.config["input_file"]) as f:
-            data = json.load(f)
+        # Try to resume from checkpoint
+        data, start_index = self._load_checkpoint()
 
-        total_questions = len(data["corrupted_questions"])
-        num_samples = int(
-            total_questions * (self.sampling_percentage / 100)
-        )
+        if data is None:
+            # Fresh start — load data from input file
+            with open(self.config["input_file"]) as f:
+                data = json.load(f)
 
-        if self.sampling_percentage < 100:
-            data["corrupted_questions"] = random.sample(
-                data["corrupted_questions"], num_samples
-            )
-            print(
-                f"Sampled {num_samples} questions "
-                f"({self.sampling_percentage}%)"
+            total_questions = len(data["corrupted_questions"])
+            num_samples = int(
+                total_questions * (self.sampling_percentage / 100)
             )
 
+            if self.sampling_percentage < 100:
+                data["corrupted_questions"] = random.sample(
+                    data["corrupted_questions"], num_samples
+                )
+                print(
+                    f"Sampled {num_samples} questions "
+                    f"({self.sampling_percentage}%)"
+                )
+            start_index = 0
+
+        questions = data["corrupted_questions"]
+        total = len(questions)
         processed_count = 0
         success_count = 0
         error_count = 0
 
-        for item in tqdm(data["corrupted_questions"]):
+        for idx in tqdm(range(start_index, total), initial=start_index, total=total):
+            item = questions[idx]
             try:
                 processed_count += 1
 
@@ -449,32 +546,25 @@ class BaseVQAEvaluator:
                 item["verification_result"]["vqa_results"].append(vqa_result)
 
             except Exception as e:
-                print(f"Error processing question: {str(e)}")
+                print(f"Error processing question {idx}: {str(e)}")
                 error_count += 1
+
+            # Save checkpoint periodically
+            if (idx + 1) % self.CHECKPOINT_INTERVAL == 0:
+                self._save_checkpoint(data, idx + 1)
+                print(f"  💾 Checkpoint saved at {idx + 1}/{total}")
 
         rate = (success_count / max(1, processed_count)) * 100
         print(f"\nProcessing completed. Success rate: {rate:.2f}%")
         self._save_results(data)
+        self._delete_checkpoint()
 
     # -----------------------------------------------------------------------
     # Results persistence
     # -----------------------------------------------------------------------
 
     def _save_results(self, data):
-        output_file = (
-            self.target_model.replace(":", "_")
-            + "_"
-            + self.config["output_file"]
-        )
-
-        if self.config.get("ocr_enabled") and not self.config.get(
-            "unable_to_respond_aware"
-        ):
-            output_file = output_file.replace(".json", "_OCR_UNABLE.json")
-        elif self.config.get("ocr_enabled"):
-            output_file = output_file.replace(".json", "_OCR.json")
-        elif not self.config.get("unable_to_respond_aware"):
-            output_file = output_file.replace(".json", "_UNABLE.json")
+        output_file = self._get_output_file()
 
         try:
             with open(output_file, "w") as f:
@@ -482,3 +572,4 @@ class BaseVQAEvaluator:
             print(f"Results successfully saved to {output_file}")
         except Exception as e:
             print(f"Error saving results: {str(e)}")
+
