@@ -30,7 +30,7 @@ from collections import Counter
 class BaseVQAEvaluator:
     """Base class for all VQA experiment evaluators."""
 
-    def __init__(self, config_path, model_backend):
+    def __init__(self, config_path, model_backend, experiment_name=None):
         """
         Parameters
         ----------
@@ -38,11 +38,14 @@ class BaseVQAEvaluator:
             Path to the JSON configuration file.
         model_backend : models.base_model.ModelBackend
             An initialised backend that implements ``infer(prompt, images)``.
+        experiment_name : str, optional
+            Name of the experiment (e.g. 'docel_cot_v1'). If None, uses class name.
         """
         with open(config_path) as f:
             self.config = json.load(f)
 
         self.model_backend = model_backend
+        self.experiment_name = experiment_name or self.__class__.__name__
 
         # model_config is still used for windowing logic (batch_size / stride)
         self.model_config = {
@@ -58,7 +61,7 @@ class BaseVQAEvaluator:
         )
 
         print(f"Initialized evaluator for model: {self.target_model}")
-        print(f"Experiment class: {self.__class__.__name__}")
+        print(f"Experiment name: {self.experiment_name}")
 
     # -----------------------------------------------------------------------
     # Utility methods — available to all subclasses
@@ -372,8 +375,11 @@ class BaseVQAEvaluator:
 
     def _get_output_file(self):
         """Compute the final output filename (used by both checkpoint and save)."""
+        exp_name = getattr(self, "experiment_name", self.__class__.__name__)
         output_file = (
             self.target_model.replace(":", "_")
+            + "_"
+            + exp_name
             + "_"
             + self.config["output_file"]
         )
@@ -392,8 +398,7 @@ class BaseVQAEvaluator:
     def _get_checkpoint_path(self):
         """Return the checkpoint file path for this experiment run."""
         output_file = self._get_output_file()
-        experiment_name = self.__class__.__name__
-        return output_file.replace(".json", f"_{experiment_name}.checkpoint.json")
+        return output_file.replace(".json", ".checkpoint.json")
 
     def _save_checkpoint(self, data, processed_index):
         """Save a checkpoint with current progress."""

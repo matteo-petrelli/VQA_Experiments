@@ -145,6 +145,7 @@ def main():
     evaluator = ExperimentClass(
         config_path=config_path_to_use,
         model_backend=backend,
+        experiment_name=args.experiment,
     )
 
     try:
