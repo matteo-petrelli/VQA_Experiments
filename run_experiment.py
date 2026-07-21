@@ -27,12 +27,12 @@ BACKENDS = {
 }
 
 
-def _create_backend(backend_name, model_override=None):
+def _create_backend(backend_name, model_override=None, ollama_host=None):
     """Instantiate and return the selected ModelBackend."""
     if backend_name == "ollama":
         from models.ollama_model import OllamaBackend
         model_name = model_override or "gemma3:4b"
-        return OllamaBackend(model_name=model_name)
+        return OllamaBackend(model_name=model_name, host=ollama_host)
 
     elif backend_name == "phi":
         from models.phi_model import PhiBackend
@@ -92,6 +92,12 @@ def main():
         default="/kaggle/input/datasets/matteopetrelli/config-phi/config_kaggle.json",
         help="Path to the config JSON file",
     )
+    parser.add_argument(
+        "--ollama-host",
+        type=str,
+        default=None,
+        help="Ollama server URL (e.g. http://127.0.0.1:11435 for multi-GPU)",
+    )
 
     args = parser.parse_args()
 
@@ -126,7 +132,7 @@ def main():
         print(f"Note: Experiment '{args.experiment}' — {note}.")
 
     # -- Create and set up the backend --
-    backend = _create_backend(args.backend, args.model)
+    backend = _create_backend(args.backend, args.model, ollama_host=getattr(args, 'ollama_host', None))
 
     try:
         backend.setup()

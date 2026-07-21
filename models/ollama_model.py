@@ -4,6 +4,10 @@ Ollama model backend — uses the local Ollama server.
 Supports any Ollama-compatible vision model, e.g.:
   - gemma3:4b
   - qwen3-vl:8b
+
+Multi-GPU usage:
+  Pass ``host`` to connect to a specific Ollama server instance
+  (e.g. ``http://127.0.0.1:11435`` for a second server on GPU 1).
 """
 
 import os
@@ -15,10 +19,22 @@ from models.base_model import ModelBackend
 
 
 class OllamaBackend(ModelBackend):
-    """Backend that delegates inference to a local Ollama server."""
+    """Backend that delegates inference to a local Ollama server.
 
-    def __init__(self, model_name="gemma3:4b"):
+    Parameters
+    ----------
+    model_name : str
+        Ollama model tag (e.g. ``qwen3-vl:8b``).
+    host : str or None
+        If provided, connect to this Ollama server URL instead of the
+        default ``http://127.0.0.1:11434``.  Useful for multi-GPU
+        setups where each GPU runs its own server on a different port.
+    """
+
+    def __init__(self, model_name="gemma3:4b", host=None):
         self.model_name = model_name
+        self.host = host  # e.g. "http://127.0.0.1:11435"
+        self._client = None
 
     # ------------------------------------------------------------------
     def _find_ollama(self):
@@ -39,6 +55,17 @@ class OllamaBackend(ModelBackend):
         )
 
     # ------------------------------------------------------------------
+    def _get_client(self):
+        """Lazily create an ollama.Client bound to the configured host."""
+        if self._client is None:
+            import ollama
+            if self.host:
+                self._client = ollama.Client(host=self.host)
+            else:
+                self._client = ollama.Client()
+        return self._client
+
+    # ------------------------------------------------------------------
     def setup(self):
         """Start the Ollama server and pull the model."""
         ollama_path = self._find_ollama()
@@ -57,9 +84,9 @@ class OllamaBackend(ModelBackend):
 
     # ------------------------------------------------------------------
     def infer(self, prompt, image_paths):
-        import ollama
+        client = self._get_client()
 
-        output = ollama.chat(
+        output = client.chat(
             model=self.model_name,
             messages=[
                 {
