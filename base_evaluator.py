@@ -380,17 +380,18 @@ class BaseVQAEvaluator:
             self.target_model.replace(":", "_")
             + "_"
             + exp_name
-            + "_"
-            + self.config["output_file"]
+            + ".json"
         )
 
-        if self.config.get("ocr_enabled") and not self.config.get(
-            "unable_to_respond_aware"
-        ):
+        ocr_in_exp = "ocr" in exp_name.lower()
+        ocr_enabled = self.config.get("ocr_enabled", False)
+        unable_aware = self.config.get("unable_to_respond_aware", True)
+
+        if ocr_enabled and not ocr_in_exp and not unable_aware:
             output_file = output_file.replace(".json", "_OCR_UNABLE.json")
-        elif self.config.get("ocr_enabled"):
+        elif ocr_enabled and not ocr_in_exp:
             output_file = output_file.replace(".json", "_OCR.json")
-        elif not self.config.get("unable_to_respond_aware"):
+        elif not unable_aware:
             output_file = output_file.replace(".json", "_UNABLE.json")
 
         return output_file
