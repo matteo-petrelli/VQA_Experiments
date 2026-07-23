@@ -123,7 +123,7 @@ def main():
 
         config_data["ocr_enabled"] = (args.experiment == "baseline_ocr")
 
-        temp_config_path = os.path.join(os.getcwd(), "_temp_config.json")
+        temp_config_path = os.path.join(os.getcwd(), f"_temp_config_{args.experiment}.json")
         with open(temp_config_path, "w") as f:
             json.dump(config_data, f)
         config_path_to_use = temp_config_path
